@@ -17,7 +17,6 @@ func set_settings():
 	settings.set("RakuScript_Color/instr_color", 0)
 
 func set_default_colors(first_load: bool):
-	
 	settings.add_property_info({
 		"name": "RakuScript_Color/base_color",
 		"type": TYPE_COLOR
@@ -132,9 +131,18 @@ class DialogueHighlighter extends EditorSyntaxHighlighter:
 			color_map[0] = { "color": character_color }
 			color_map[10] = { "color": base_color }
 			
-		if str.strip_edges().begins_with("jump"):
-			color_map[0] = { "color": jump_color }
-			color_map[4] = { "color": base_color }
+		# Robust jump highlighting (supports indentation and conditional form: `jump label if condition`)
+		var leading_ws := 0
+		for ch in str:
+			if ch == " " or ch == "\t":
+				leading_ws += 1
+				continue
+			break
+		var stripped := str.substr(leading_ws)
+		if stripped.begins_with("jump"):
+			# Color the word `jump` at the correct position even when indented
+			color_map[leading_ws] = { "color": jump_color }
+			color_map[leading_ws + 4] = { "color": base_color }
 
 		if str.strip_edges().ends_with(":"):
 			color_map[0] = { "color": label_color }
@@ -147,7 +155,12 @@ class DialogueHighlighter extends EditorSyntaxHighlighter:
 		var str_odd: bool = false
 		var var_odd: bool = false
 		
-		var str_index = str.find("if")
+		# Position of `if` for conditional jump; respect indentation
+		var if_index_in_stripped := stripped.find(" if ")
+		if if_index_in_stripped == -1:
+			# Fallback to any `if` occurrence
+			if_index_in_stripped = stripped.find("if")
+		var str_index = -1 if (if_index_in_stripped == -1) else leading_ws + if_index_in_stripped
 		var var_index = str.split(".")
 		
 		for char in str:
@@ -157,15 +170,17 @@ class DialogueHighlighter extends EditorSyntaxHighlighter:
 				color_map[i-1] = { "color": num_color }
 				color_map[i] = { "color": base_color}
 				
-			if !str.begins_with("jump") and char == ">" and var_odd == false:
+			if !stripped.begins_with("jump") and char == ">" and var_odd == false:
 				color_map[i-1] = { "color": jump_color }
 				color_map[i] = { "color": base_color}
 				
 			# strings, then variable
 			if char == "\"" and str_odd == true:
-				color_map[i-1] = { "color": base_color }
+				# Closing quote: revert to base
+				color_map[i] = { "color": base_color }
 				str_odd = false
-			if char == "\"" and str_odd == false:
+			elif char == "\"" and str_odd == false:
+				# Opening quote: switch to string color
 				color_map[i-1] = { "color": string_color }
 				past_color = string_color
 				str_odd = true
@@ -178,8 +193,10 @@ class DialogueHighlighter extends EditorSyntaxHighlighter:
 				color_map[i-1] = { "color": var_color }
 				var_odd = true
 				
-			if str.begins_with("jump") and str_index == i and var_odd == false and str_odd == false:
-				color_map[str_index] = { "color": instr_color }
-				color_map[str_index+2] = { "color": base_color }
+			# Highlight the `if` keyword in conditional jump form
+			if stripped.begins_with("jump") and str_index != -1 and (i-1) == str_index and var_odd == false and str_odd == false:
+				color_map[str_index + 1] = { "color": instr_color }
+				# Reset color after the `if`
+				color_map[str_index + 3] = { "color": base_color }
 
 		return color_map
